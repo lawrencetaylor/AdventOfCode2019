@@ -12,13 +12,16 @@ data State = State
   , instructionPointer :: Int } 
   deriving Show
 
-{-  State Parser -}
+-- Parsing
+
 pProgram :: Parser State
 pProgram = fmap stateFromIntArray $ P.sepBy pInt $ P.char ','
   where
     stateFromIntArray :: [Int] -> State
     stateFromIntArray input = State register 0
       where register = fromList $ zip [0..] input
+
+-- Solution
 
 add :: State -> State
 add s@(State reg pos) = 
