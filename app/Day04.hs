@@ -1,18 +1,10 @@
 module Day04 where
 
+import Advent.Number
 import Data.Maybe
-import Data.List(unfoldr, groupBy)
+import Data.List(groupBy)
 
 -- Solution
-
-{-  Splits an integer in to an array of it's digits.
-    i.e. 123 -> [1,2,3]   -}
-digits :: Int -> [Int]
-digits = reverse . unfoldr nextDigit 
-  where
-    nextDigit :: Int -> Maybe (Int, Int)
-    nextDigit 0 = Nothing
-    nextDigit n = Just (n `mod` 10, n `div` 10)
 
 {-  Tests whether the specified array has two adjacent
     items that are equal to each other

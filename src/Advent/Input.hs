@@ -3,6 +3,7 @@ module Advent.Input where
 import Data.Char as C
 import Text.Parsec as P
 import Text.ParserCombinators.Parsec(Parser, ParseError)
+import qualified Text.Parsec as P(option)
 
 readDay :: Int -> IO String
 readDay day = readFile $ dayFileName day
@@ -27,4 +28,11 @@ arrayToInt :: [Int] -> Int
 arrayToInt = foldl (\a b -> b + 10*a) 0
 
 pInt :: Parser Int
-pInt = fmap arrayToInt $ pDigits
+pInt = do
+  multiplier <- toInt <$> (option '+' $ char '-')
+  value <- fmap arrayToInt $ pDigits
+  return $ multiplier * value
+  where
+    toInt :: Char -> Int
+    toInt '+' = 1
+    toInt '-' = -1
