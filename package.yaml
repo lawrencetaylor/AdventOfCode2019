@@ -42,3 +42,5 @@ executables:
     - transformers
     - either
     - monad-loops
+    - bimap
+    - search-algorithms
