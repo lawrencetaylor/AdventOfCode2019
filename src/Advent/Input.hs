@@ -13,7 +13,7 @@ readDayLines = fmap lines . readDay
 
 dayFileName :: Int -> String
 dayFileName day
-  | day <= 10 = "inputs/day0" ++ (show day)
+  | day < 10 = "inputs/day0" ++ (show day)
   | otherwise = "inputs/day" ++ (show day)
 
 -- Parsing
