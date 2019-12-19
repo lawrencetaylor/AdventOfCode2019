@@ -1,8 +1,10 @@
 module Advent.Intcode(
     pProgram
-  , execute
-  , executeFull
   , State(..)
+  , Result(..)
+  , Exe(..)
+  , run
+  , runState
   , add
   , multiply
   , readInput
@@ -24,8 +26,7 @@ type Register = Map Int Int
 data State = State 
   { register :: Register
   , instructionPointer :: Int
-  , inputs :: [Int]
-  , output :: Maybe Int } 
+  , relativeBase :: Int } 
   deriving Show
 
 -- Parsing
@@ -34,10 +35,10 @@ pProgram :: Parser State
 pProgram = fmap stateFromIntArray $ P.sepBy pInt $ P.char ','
   where
     stateFromIntArray :: [Int] -> State
-    stateFromIntArray input = State register 0 [1] Nothing
+    stateFromIntArray input = State register 0 0
       where register = fromList $ zip [0..] input
 
--- Solution
+-- Model 
 
 type Mode = Int
 type ParameterModes = Map Int Mode
@@ -51,146 +52,202 @@ parameterModes =
   . reverse 
   . digits
 
+(!-) :: Register -> Int -> Int
+(!-) reg i = 
+  case M.lookup i reg of
+  Just j -> j
+  Nothing -> 
+    case i < 0 of
+    True -> error "Negative index"
+    False -> 0
+
+address :: ParameterModes -> State -> Int -> Maybe Int
+address modes s parameterIndex = 
+  let 
+    pos = instructionPointer s
+    reg = register s
+    unshiftedAddress = reg !- (pos + parameterIndex)
+    rb = relativeBase s
+  in
+    case M.lookup parameterIndex modes of
+      Just 2 -> Just $ rb + unshiftedAddress
+      Just 1 -> Nothing
+      _ -> Just $ unshiftedAddress  
+
 {-  Gets the value of the the parameter, taking in to account
     the specified parameter modes.  -}
-value :: ParameterModes -> Int -> Register -> Int -> Int
-value modes pos reg i = parameter mode p reg
-  where
-    p = reg ! (pos + i)
-    mode = 
-      case M.lookup i modes of
-      Just m -> m
-      Nothing -> 0
-
-    parameter :: Mode -> Int -> Register -> Int
-    parameter 0 i reg = reg ! i
-    parameter 1 i _ = i
+value :: ParameterModes -> Int -> State -> Int -> Int
+value modes pos s i = 
+  case address modes s i of
+  Just add -> reg !- add
+  Nothing -> reg !- (pos + i)
+  where 
+    reg = register s
 
 add :: State -> State
-add s@(State reg pos _ _) = 
+add s = 
   let 
-    modes = parameterModes $ reg ! pos
-    v1 = value modes pos reg 1
-    v2 = value modes pos reg 2
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    v1 = value modes pos s 1
+    v2 = value modes pos s 2
     v = v1 + v2
-  in s  { register = insert (reg ! (pos + 3)) v reg
+    Just i3 = address modes s 3
+    msg = "Add: Reg[" ++ (show i3) ++ "] = " ++ (show v)
+  in 
+    s  { register = insert i3 v reg
         , instructionPointer = pos + 4 }
 
 multiply :: State -> State
-multiply s@(State reg pos _ _) = 
+multiply s = 
   let 
-    modes = parameterModes $ reg ! pos
-    v1 = value modes pos reg 1
-    v2 = value modes pos reg 2
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    v1 = value modes pos s 1
+    v2 = value modes pos s 2
     v = v1 * v2
-  in s  { register = insert (reg ! (pos + 3)) v reg
+    Just i3 = address modes s 3
+    msg = "Multiply: Reg[" ++ (show i3) ++ "] = " ++ (show v)
+  in 
+    s  { register = insert i3 v reg
         , instructionPointer = pos + 4 }
 
-readInput :: State -> State
-readInput s@(State reg pos (i:is) _) =
-  s { register = insert (reg ! (pos + 1)) i reg
-    , instructionPointer = pos + 2
-    , inputs = is}
-
-pushOutput :: State -> State
-pushOutput s@(State reg pos i _) =
+readInput :: State -> Int -> State
+readInput s input =
   let 
-    modes = parameterModes $ reg ! pos
-    v = value modes pos reg 1
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    (Just v) = address modes s 1
+    msg = "Read: " ++ (show $ input) ++ " -> Reg[" ++ (show v) ++ "]"
+  in
+    s { register = insert v input reg
+      , instructionPointer = pos + 2 }
+
+pushOutput :: State -> (State, Int)
+pushOutput s =
+  let 
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    v = value modes pos s 1
+    msg = "Output: " ++ (show $ v)
   in 
-    s { output = Just $ v
-      , instructionPointer = pos + 2}
+    (s { instructionPointer = pos + 2}, v)
 
 jumpIfTrue :: State -> State
-jumpIfTrue s@(State reg pos i _) =
+jumpIfTrue s =
   let 
-    modes = parameterModes $ reg ! pos
-    v = value modes pos reg 1
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    v = value modes pos s 1
     newPos = 
       case v /= 0 of
-      True -> value modes pos reg 2
+      True -> value modes pos s 2
       False -> pos + 3
+    msg = "JumpIfTrue: Position -> " ++ (show newPos)
   in 
     s { instructionPointer = newPos }
 
 jumpIfFalse :: State -> State
-jumpIfFalse s@(State reg pos i _) =
+jumpIfFalse s =
   let 
-    modes = parameterModes $ reg ! pos
-    v = value modes pos reg 1
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    v = value modes pos s 1
     newPos = 
       case v == 0 of
-      True -> value modes pos reg 2
+      True -> value modes pos s 2
       False -> pos + 3
+    msg = "JumpIfFalse: Position -> " ++ (show newPos)
+    
   in 
     s { instructionPointer = newPos }
 
 lessThan :: State -> State
-lessThan s@(State reg pos i Nothing) =
+lessThan s =
   let 
-    modes = parameterModes $ reg ! pos
-    v1 = value modes pos reg 1
-    v2 = value modes pos reg 2
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    v1 = value modes pos s 1
+    v2 = value modes pos s 2
     v = 
       case v1 < v2 of
       True -> 1
       False -> 0
+    Just i3 = address modes s 3
+    msg = "LessThan: Reg[" ++ (show i3) ++ "] = " ++ (show v)
   in 
-    s  { register = insert (reg ! (pos + 3)) v reg
+    s  { register = insert i3 v reg
         , instructionPointer = pos + 4 }
 
 equals :: State -> State
-equals s@(State reg pos i _) =
+equals s =
   let 
-    modes = parameterModes $ reg ! pos
-    v1 = value modes pos reg 1
-    v2 = value modes pos reg 2
+    reg = register s
+    pos = instructionPointer s
+    modes = parameterModes $ reg !- pos
+    v1 = value modes pos s 1
+    v2 = value modes pos s 2
+
     v = 
       case v1 == v2 of
       True -> 1
       False -> 0
+    Just i3 = address modes s 3
+    msg = "Equals: Reg[" ++ (show i3) ++ "] = " ++ (show v)
   in 
-    s  { register = insert (reg ! (pos + 3)) v reg
+    s  { register = insert i3 v reg
         , instructionPointer = pos + 4 }
 
-{-  Executes the specified program using the 
-    mapping of OpCode -> Method.  Returns the 
-    last value outputted when the program halts.  -}
-execute :: Map Int (State -> State) -> State -> Maybe Int
-execute operations s@(State reg pos _ out) = 
-  case M.lookup code operations of
-  Just f -> execute operations (f s)
-  Nothing ->
-    case code of
-    99 -> out
-    c -> error $ "Invalid Opcode: " ++ (show c)
-  where 
-    code = (reg ! pos) `mod` 100
+adjustBase :: State -> State
+adjustBase s = 
+  let 
+    reg = register s
+    pos = instructionPointer s
+    rel = relativeBase s
+    modes = parameterModes $ reg !- pos 
+    v = value modes pos s 1
+    msg = "AdjustBase: Base = " ++ (show $ rel + v)
+  in 
+    s {  relativeBase = rel + v
+        , instructionPointer = pos + 2 }
 
-{-  Executes the specified program using the 
-    mapping of OpCode -> Method.  Returns the 
-    last value outputted when the program halts.  -}
-execute2 :: Map Int (State -> State) -> State -> State
-execute2 operations s@(State reg pos _ out) = 
-  case M.lookup code operations of
-  Just f -> execute2 operations (f s)
-  Nothing ->
-    case code of
-    99 -> s { output = out }
-    c -> error $ "Invalid Opcode: " ++ (show c)
-  where 
-    code = (reg ! pos) `mod` 100
+data Result = 
+  Waiting Exe [Int]
+  | Halt [Int]
 
-executeFull :: State -> State
-executeFull p =  execute2 operations2 $ p
-  where
-    operations2 = M.fromList
-        [ (1, add)
-        , (2, multiply)
-        , (3, readInput)
-        , (4, pushOutput)
-        , (5, jumpIfTrue)
-        , (6, jumpIfFalse)
-        , (7, lessThan)
-        , (8, equals)
-        ]
+type Exe = [Int] -> Result
+
+go :: State -> [Int] -> Exe
+go s@(State reg pos relBase) accOutput input  = 
+  let 
+    opCode = reg !- pos
+    opC = opCode `mod` 100
+  in 
+    case opC of
+    1 -> go (add s) accOutput input 
+    2 -> go (multiply s) accOutput input
+    3 -> case input of
+          [] -> Waiting (\i -> go s [] i) (reverse accOutput)
+          (i:is) -> go (readInput s i) accOutput is
+    4 -> 
+      let (newState, output) = pushOutput s
+      in (go newState (output : accOutput) input)
+    5 -> go (jumpIfTrue s) accOutput input
+    6 -> go (jumpIfFalse s) accOutput input
+    7 -> go (lessThan s) accOutput input
+    8 -> go (equals s) accOutput input
+    9 -> go (adjustBase s) accOutput input
+    99 -> Halt (reverse accOutput)
+
+runState :: State -> Exe
+runState s = go s []
+
+run :: State -> Exe
+run s = runState s 
