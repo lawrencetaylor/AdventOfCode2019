@@ -4,7 +4,7 @@ module Advent.Intcode(
   , Result(..)
   , Exe(..)
   , run
-  , runState
+  , runWithOpCodes
   , add
   , multiply
   , readInput
@@ -19,6 +19,7 @@ import Advent.Number
 import Data.Map as M
 import Text.ParserCombinators.Parsec(Parser)
 import qualified Text.Parsec as P(char, sepBy)
+import qualified Data.Set as S
 
 type Register = Map Int Int
 
@@ -224,30 +225,37 @@ data Result =
 
 type Exe = [Int] -> Result
 
-go :: State -> [Int] -> Exe
-go s@(State reg pos relBase) accOutput input  = 
-  let 
-    opCode = reg !- pos
-    opC = opCode `mod` 100
-  in 
-    case opC of
-    1 -> go (add s) accOutput input 
-    2 -> go (multiply s) accOutput input
-    3 -> case input of
-          [] -> Waiting (\i -> go s [] i) (reverse accOutput)
-          (i:is) -> go (readInput s i) accOutput is
-    4 -> 
-      let (newState, output) = pushOutput s
-      in (go newState (output : accOutput) input)
-    5 -> go (jumpIfTrue s) accOutput input
-    6 -> go (jumpIfFalse s) accOutput input
-    7 -> go (lessThan s) accOutput input
-    8 -> go (equals s) accOutput input
-    9 -> go (adjustBase s) accOutput input
-    99 -> Halt (reverse accOutput)
+runWithOpCodes :: [Int] -> State -> Exe
+runWithOpCodes opCodes state = go state []
+  where
 
-runState :: State -> Exe
-runState s = go s []
+    opCodeSet = S.fromList opCodes
+
+    go :: State -> [Int] -> Exe
+    go s@(State reg pos relBase) accOutput input  = 
+      let 
+        opCode = reg !- pos
+        opC = opCode `mod` 100
+      in
+        case S.member opC opCodeSet of
+        False -> error "Unexpected Op code"
+        True ->
+          case opC of
+          1 -> go (add s) accOutput input 
+          2 -> go (multiply s) accOutput input
+          3 -> case input of
+                [] -> Waiting (\i -> go s [] i) (reverse accOutput)
+                (i:is) -> go (readInput s i) accOutput is
+          4 -> 
+            let (newState, output) = pushOutput s
+            in (go newState (output : accOutput) input)
+          5 -> go (jumpIfTrue s) accOutput input
+          6 -> go (jumpIfFalse s) accOutput input
+          7 -> go (lessThan s) accOutput input
+          8 -> go (equals s) accOutput input
+          9 -> go (adjustBase s) accOutput input
+          99 -> Halt (reverse accOutput)
 
 run :: State -> Exe
-run s = runState s 
+run s = runWithOpCodes [1,2,3,4,5,6,7,8,9,99] s
+
