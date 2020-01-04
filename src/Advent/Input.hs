@@ -4,6 +4,7 @@ import Data.Char as C
 import Text.Parsec as P
 import Text.ParserCombinators.Parsec(Parser, ParseError)
 import qualified Text.Parsec as P(option)
+import Debug.Trace
 
 readDay :: Int -> IO String
 readDay day = readFile $ dayFileName day
@@ -36,3 +37,8 @@ pInt = do
     toInt :: Char -> Int
     toInt '+' = 1
     toInt '-' = -1
+
+-- Logging
+
+traceLabel :: (Show a) => String -> a -> a
+traceLabel l a = trace (l ++ ": " ++ (show a)) a
