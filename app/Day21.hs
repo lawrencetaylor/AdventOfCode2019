@@ -239,7 +239,7 @@ partOne program = last output
     (Halt output) = 
       run program $ fromAscii w2
 
-partTwo :: State - Int
+partTwo :: State -> Int
 partTwo program = last output
   where
     (Halt output) = 
