@@ -19,7 +19,7 @@ data Direction
   | E
   | S
   | W
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 instance Enum Direction where
   toEnum i =
